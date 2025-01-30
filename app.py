@@ -9,7 +9,7 @@ def main():
     st.title("Bargaining Simulator (Akerlof ‘Lemons’ Model)")
 
     counteroffer = st.sidebar.number_input(
-        "Your Counteroffer", min_value=0, max_value=200, value=60, step=1
+        "Your Counteroffer", min_value=0, max_value=20000, value=6000, step=100
     )
     negotiate_button = st.sidebar.button("Negotiate!")
     reset_button = st.sidebar.button("Reset Game")
@@ -19,29 +19,31 @@ def main():
         st.session_state.done = False
         st.session_state.reward = 0
 
-    # Handle reset
+    # If user clicked "Reset Game"
     if reset_button:
         st.session_state.state = env.reset()
         st.session_state.done = False
         st.session_state.reward = 0
-        # No st.stop() - we let the code continue
 
-    # Display environment state
+    # Extract state info
     price_bin, round_number, signaling_flag = st.session_state.state
-    asking_price = price_bin * 10 + 50
+    # We'll show the real float price from env.price
+    asking_price = env.price  # <--- direct from environment
 
     st.subheader(f"Round {round_number + 1}")
-    st.write(f"**Seller's asking price:** ${asking_price:.2f}")
+    st.write(f"**Seller's asking price:** ${asking_price:,.2f}")
     st.write(f"**Signal:** {'Yes' if signaling_flag else 'No'}")
 
+    # Check if negotiation ended
     if st.session_state.done:
         if st.session_state.reward > 0:
             st.success(
-                f"Transaction successful! Seller's profit was ${st.session_state.reward:.2f}."
+                f"Transaction successful! Seller's profit: ${st.session_state.reward:,.2f}."
             )
         else:
             st.warning("Transaction failed or ended without a deal.")
     else:
+        # Ongoing negotiation
         if negotiate_button:
             next_state, reward, done = env.step(
                 action=None, player=True, counteroffer=counteroffer
@@ -53,7 +55,7 @@ def main():
             if done:
                 if reward > 0:
                     st.success(
-                        f"You paid ${counteroffer}, seller's profit: ${reward:.2f}."
+                        f"You paid ${counteroffer:,.2f}, seller's profit: ${reward:,.2f}."
                     )
                 else:
                     st.warning("Seller rejected your offer!")

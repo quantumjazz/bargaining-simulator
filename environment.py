@@ -4,51 +4,44 @@ import numpy as np
 class SellerEnvironment:
     def __init__(self):
         """
-        In Akerlof's spirit:
-        - cost = 50 (low quality) or 70 (high quality).
-        - If the seller chooses to signal, we add a signal cost to the posted price.
-          * For high-quality items, signal_cost might be small (e.g., 5).
-          * For low-quality items, signal_cost might be larger (e.g., 15), so it's not worth faking.
-        - The buyer only knows the final posted price and whether there's a 'signal' or not.
+        A more realistic environment:
+        - cost = 5000 (low quality) or 7000 (high quality).
+        - signal costs: 1500 if low-quality tries to fake it, 500 if high-quality.
+        - markup: random uniform between 2000..4000.
+        - final price = cost + markup + (possible signal cost).
         """
-        # Possible production costs
-        self.low_cost = 50
-        self.high_cost = 70
+        self.low_cost = 5000
+        self.high_cost = 7000
 
-        # Signal costs
-        self.signal_cost_low = 15   # More expensive for a low-quality seller to fake it
-        self.signal_cost_high = 5   # Cheaper for a high-quality seller
+        self.signal_cost_low = 1500
+        self.signal_cost_high = 500
 
-        # Range for markup
-        self.min_markup = 10
-        self.max_markup = 30
+        self.min_markup = 2000
+        self.max_markup = 4000
 
-        # Rounds
         self.max_rounds = 3
         self.round = 0
 
-        # Initialize
         self.reset()
 
     def reset(self):
         """Reset the environment for a new game or negotiation."""
-        # Randomly assign quality
+        # Randomly assign low or high quality
         self.quality = random.choice(["low", "high"])
         if self.quality == "low":
             self.cost = self.low_cost
         else:
             self.cost = self.high_cost
 
-        # Decide on a random markup
+        # Random markup
         self.markup = random.uniform(self.min_markup, self.max_markup)
 
-        # Decide whether to signal or not
-        # You can make it random or deterministic. For instance:
-        #   - High-quality sellers frequently signal (80% chance).
-        #   - Low-quality sellers rarely signal (20% chance).
+        # Decide whether to signal (randomly or otherwise)
         if self.quality == "high":
+            # High-quality more likely to signal
             self.signaling = (random.random() < 0.8)
         else:
+            # Low-quality less likely to signal
             self.signaling = (random.random() < 0.2)
 
         # Compute the posted price
@@ -66,32 +59,28 @@ class SellerEnvironment:
 
     def get_discrete_state(self):
         """
-        Return a discretized state (price_bin, round, signaling_flag).
-        You can adapt bin sizes as needed.
+        Convert the float price into a bin index for Q-learning.
+        We'll map 5000..12000 in steps of 1000 → 8 bins (0..7).
+        If price < 5000, bin=0; if price>12000, bin=7.
         """
-        # For example, let's bin the price from 50..120 in steps of 10 → indices 0..7
-        price_bin = int(min(max((self.price - 50) // 10, 0), 7))
+        price_bin = int((self.price - 5000) // 1000)
+        price_bin = max(0, min(price_bin, 7))
+
         return (price_bin, self.round, int(self.signaling))
 
     def step(self, action=None, player=False, counteroffer=None):
         """
-        The main environment step:
-        - If player=True, we interpret a human's counteroffer.
-        - If the offer >= cost, the transaction succeeds, and the seller's reward is
-          (counteroffer - cost - possible signal_cost).
-        - If the offer < cost, it's rejected; negotiation ends (reward can be negative or zero).
-        - If max_rounds are reached, negotiation ends with a penalty for unsold item.
-
-        Returns: next_state, reward, done
+        If player=True, interpret a human's counteroffer:
+          - If counteroffer >= self.cost, success, reward = (counter - cost - signal_cost).
+          - If counter < self.cost, reject → done, reward=-1.
+        Otherwise, the environment can do AI actions (not shown).
         """
         self.round += 1
         reward = 0
         done = False
 
         if player:
-            # The human buyer's behavior
             if counteroffer is not None:
-                # Check acceptance from the SELLER's perspective:
                 if counteroffer >= self.cost:
                     # Transaction successful
                     if self.signaling:
@@ -102,26 +91,20 @@ class SellerEnvironment:
                     else:
                         seller_profit = counteroffer - self.cost
 
-                    # The environment returns the SELLER's profit as "reward"
                     reward = seller_profit
                     done = True
                 else:
-                    # Offer below cost → seller rejects
+                    # Offer below cost -> reject
                     reward = -1
                     done = True
             else:
-                # No counteroffer → buyer walks away, negotiation ends
+                # Buyer walks away (no counteroffer)
                 done = True
 
-        else:
-            # If you're letting an AI agent manipulate the price or do some action
-            # (But for now, let's keep it minimal or adapt as needed)
-            pass
-
-        # Check if we exceeded the max number of rounds
+        # If max rounds reached with no deal
         if not done and self.round >= self.max_rounds:
             done = True
-            reward = -10  # penalty for no deal
+            reward = -10
 
         next_state = self.get_discrete_state()
         return next_state, reward, done
